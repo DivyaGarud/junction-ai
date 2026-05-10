@@ -306,10 +306,236 @@
 #     port = int(os.environ.get("PORT", 5000))
 #     socketio.run(app, host="0.0.0.0", port=port, debug=False)
 
+# ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-# app.py
-# Main Flask server — Junction AI (Production Safe Version)
+
+
+
+
+# # app.py
+# # Main Flask server — Junction AI (Production Safe Version)
+
+# from flask import Flask, jsonify, request
+# from flask_cors import CORS
+# from flask_socketio import SocketIO, emit
+# import threading
+# import time
+# from datetime import datetime
+# import os
+
+# # ============================================================
+# # SAFE IMPORTS (NO CRASH ON RENDER)
+# # ============================================================
+
+# try:
+#     from ai_engine import optimizer
+# except:
+#     optimizer = None
+
+# try:
+#     from predictor import predictor
+# except:
+#     predictor = None
+
+# # Detector (YOLO) disabled for Render free tier
+# detector = None
+
+# # Database
+# from database import (
+#     save_junction_data,
+#     get_recent_data,
+#     save_emergency_event,
+#     get_analytics_summary
+# )
+
+# # ============================================================
+# # APP SETUP
+# # ============================================================
+
+# app = Flask(__name__)
+# app.config["SECRET_KEY"] = "junction-ai-secret-2024"
+
+# CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+
+# socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+# # ============================================================
+# # GLOBAL STATE
+# # ============================================================
+
+# junction_state = {
+#     "North": {"vehicle_count": 0, "queue_length": 0, "avg_wait_time": 0, "has_emergency": False},
+#     "South": {"vehicle_count": 0, "queue_length": 0, "avg_wait_time": 0, "has_emergency": False},
+#     "East":  {"vehicle_count": 0, "queue_length": 0, "avg_wait_time": 0, "has_emergency": False},
+#     "West":  {"vehicle_count": 0, "queue_length": 0, "avg_wait_time": 0, "has_emergency": False},
+# }
+
+# current_signal_times = {}
+# simulation_running = False
+
+# # ============================================================
+# # TRAFFIC SIMULATION
+# # ============================================================
+
+# def run_simulation():
+#     global junction_state, current_signal_times, simulation_running
+
+#     import random
+#     simulation_running = True
+#     print("🚦 Traffic simulation started")
+
+#     while simulation_running:
+#         current_hour = datetime.now().hour
+#         is_rush = (8 <= current_hour <= 10) or (17 <= current_hour <= 20)
+
+#         # Update traffic data
+#         for direction in ["North", "South", "East", "West"]:
+#             base = random.randint(15, 35) if is_rush else random.randint(2, 20)
+
+#             junction_state[direction] = {
+#                 "vehicle_count": base + random.randint(-3, 3),
+#                 "queue_length": base * 4.5 + random.uniform(-5, 5),
+#                 "avg_wait_time": base * 2.1 + random.uniform(-5, 5),
+#                 "has_emergency": random.random() < 0.03,
+#                 "direction": direction
+#             }
+
+#         # AI optimizer (safe fallback)
+#         if optimizer:
+#             lane_list = [{"direction": d, **junction_state[d]} for d in junction_state]
+#             current_signal_times = optimizer.calculate_green_times(lane_list)
+#         else:
+#             current_signal_times = {
+#                 d: 10 + (junction_state[d]["vehicle_count"] // 5)
+#                 for d in junction_state
+#             }
+
+#         # Emergency check
+#         emergency_info = None
+#         for d in junction_state:
+#             if junction_state[d]["has_emergency"]:
+#                 emergency_info = {"direction": d, "type": "Ambulance"}
+#                 save_emergency_event(d, "Ambulance")
+#                 break
+
+#         payload = {
+#             "timestamp": datetime.now().isoformat(),
+#             "lanes": {
+#                 d: {
+#                     **junction_state[d],
+#                     "green_time": current_signal_times.get(d, 10)
+#                 } for d in junction_state
+#             },
+#             "emergency": emergency_info,
+#             "total_vehicles": sum(junction_state[d]["vehicle_count"] for d in junction_state)
+#         }
+
+#         save_junction_data(payload)
+#         socketio.emit("junction_update", payload)
+
+#         time.sleep(3)
+
+# # ============================================================
+# # ROUTES
+# # ============================================================
+
+# @app.route("/")
+# def home():
+#     return jsonify({"message": "Junction AI API running", "status": "ok"})
+
+# @app.route("/api/status")
+# def status():
+#     return jsonify({
+#         "status": "running",
+#         "simulation": simulation_running
+#     })
+
+# @app.route("/api/junction/current")
+# def current():
+#     return jsonify({
+#         "lanes": junction_state,
+#         "timestamp": datetime.now().isoformat()
+#     })
+
+# @app.route("/api/junction/history")
+# def history():
+#     limit = request.args.get("limit", 20, type=int)
+#     data = get_recent_data(limit)
+#     return jsonify({"data": data})
+
+# @app.route("/api/analytics")
+# def analytics():
+#     data = get_analytics_summary()
+#     data.pop("_id", None)
+#     return jsonify(data)
+
+# @app.route("/api/predict", methods=["POST"])
+# def predict():
+#     if not predictor:
+#         return jsonify({"error": "Predictor disabled"}), 400
+
+#     data = request.get_json()
+#     result = predictor.predict(
+#         vehicle_count=data.get("vehicle_count", 0),
+#         queue_length=data.get("queue_length", 0),
+#         wait_time=data.get("wait_time", 0),
+#         hour=datetime.now().hour
+#     )
+#     return jsonify(result)
+
+# # ============================================================
+# # SIMULATION CONTROL
+# # ============================================================
+
+# @app.route("/api/simulate/start", methods=["POST"])
+# def start():
+#     global simulation_running
+
+#     if not simulation_running:
+#         thread = threading.Thread(target=run_simulation, daemon=True)
+#         thread.start()
+#         return jsonify({"message": "Simulation started"})
+
+#     return jsonify({"message": "Already running"})
+
+# @app.route("/api/simulate/stop", methods=["POST"])
+# def stop():
+#     global simulation_running
+#     simulation_running = False
+#     return jsonify({"message": "Simulation stopped"})
+
+# # ============================================================
+# # SOCKET EVENTS
+# # ============================================================
+
+# @socketio.on("connect")
+# def connect():
+#     print("✅ Client connected")
+#     emit("connected", {"message": "Junction AI connected"})
+
+# @socketio.on("disconnect")
+# def disconnect():
+#     print("❌ Client disconnected")
+
+# # ============================================================
+# # MAIN
+# # ============================================================
+
+# if __name__ == "__main__":
+#     print("🚦 Starting Junction AI Server...")
+#     port = int(os.environ.get("PORT", 5000))
+#     socketio.run(app, host="0.0.0.0", port=port, debug=False)
+
+
+
+
+
+# ///////////////////////////////////////////////////////////////////////////
+
+
+
+# app.py - FINAL FIXED VERSION
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -318,11 +544,10 @@ import threading
 import time
 from datetime import datetime
 import os
+import json
+import random
 
-# ============================================================
-# SAFE IMPORTS (NO CRASH ON RENDER)
-# ============================================================
-
+# SAFE IMPORTS
 try:
     from ai_engine import optimizer
 except:
@@ -333,20 +558,12 @@ try:
 except:
     predictor = None
 
-# Detector (YOLO) disabled for Render free tier
-detector = None
-
-# Database
 from database import (
     save_junction_data,
     get_recent_data,
     save_emergency_event,
     get_analytics_summary
 )
-
-# ============================================================
-# APP SETUP
-# ============================================================
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "junction-ai-secret-2024"
@@ -355,9 +572,8 @@ CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
-# ============================================================
-# GLOBAL STATE
-# ============================================================
+def safe_json(obj):
+    return json.loads(json.dumps(obj, default=str))
 
 junction_state = {
     "North": {"vehicle_count": 0, "queue_length": 0, "avg_wait_time": 0, "has_emergency": False},
@@ -369,44 +585,33 @@ junction_state = {
 current_signal_times = {}
 simulation_running = False
 
-# ============================================================
-# TRAFFIC SIMULATION
-# ============================================================
-
 def run_simulation():
-    global junction_state, current_signal_times, simulation_running
+    global simulation_running, junction_state, current_signal_times
 
-    import random
     simulation_running = True
     print("🚦 Traffic simulation started")
 
     while simulation_running:
         current_hour = datetime.now().hour
-        is_rush = (8 <= current_hour <= 10) or (17 <= current_hour <= 20)
+        rush = (8 <= current_hour <= 10) or (17 <= current_hour <= 20)
 
-        # Update traffic data
-        for direction in ["North", "South", "East", "West"]:
-            base = random.randint(15, 35) if is_rush else random.randint(2, 20)
+        for d in junction_state:
+            base = random.randint(15, 35) if rush else random.randint(2, 20)
 
-            junction_state[direction] = {
-                "vehicle_count": base + random.randint(-3, 3),
-                "queue_length": base * 4.5 + random.uniform(-5, 5),
-                "avg_wait_time": base * 2.1 + random.uniform(-5, 5),
+            junction_state[d] = {
+                "vehicle_count": int(base + random.randint(-3, 3)),
+                "queue_length": float(base * 4.5 + random.uniform(-5, 5)),
+                "avg_wait_time": float(base * 2.1 + random.uniform(-5, 5)),
                 "has_emergency": random.random() < 0.03,
-                "direction": direction
+                "direction": d
             }
 
-        # AI optimizer (safe fallback)
         if optimizer:
             lane_list = [{"direction": d, **junction_state[d]} for d in junction_state]
             current_signal_times = optimizer.calculate_green_times(lane_list)
         else:
-            current_signal_times = {
-                d: 10 + (junction_state[d]["vehicle_count"] // 5)
-                for d in junction_state
-            }
+            current_signal_times = {d: 10 for d in junction_state}
 
-        # Emergency check
         emergency_info = None
         for d in junction_state:
             if junction_state[d]["has_emergency"]:
@@ -420,79 +625,50 @@ def run_simulation():
                 d: {
                     **junction_state[d],
                     "green_time": current_signal_times.get(d, 10)
-                } for d in junction_state
+                }
+                for d in junction_state
             },
             "emergency": emergency_info,
             "total_vehicles": sum(junction_state[d]["vehicle_count"] for d in junction_state)
         }
 
         save_junction_data(payload)
-        socketio.emit("junction_update", payload)
+        socketio.emit("junction_update", safe_json(payload))
 
         time.sleep(3)
 
-# ============================================================
-# ROUTES
-# ============================================================
+# ================= ROUTES =================
 
-@app.route("/")
-def home():
-    return jsonify({"message": "Junction AI API running", "status": "ok"})
+@app.route("/api/emergency/trigger", methods=["POST", "OPTIONS"])
+def trigger_emergency():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
 
-@app.route("/api/status")
-def status():
-    return jsonify({
-        "status": "running",
-        "simulation": simulation_running
-    })
+    data = request.get_json(silent=True) or {}
+    direction = data.get("direction", "North")
 
-@app.route("/api/junction/current")
-def current():
-    return jsonify({
-        "lanes": junction_state,
-        "timestamp": datetime.now().isoformat()
-    })
+    junction_state[direction]["has_emergency"] = True
 
-@app.route("/api/junction/history")
-def history():
-    limit = request.args.get("limit", 20, type=int)
-    data = get_recent_data(limit)
-    return jsonify({"data": data})
+    return jsonify({"message": f"Emergency triggered at {direction}"})
 
-@app.route("/api/analytics")
-def analytics():
-    data = get_analytics_summary()
-    data.pop("_id", None)
-    return jsonify(data)
 
-@app.route("/api/predict", methods=["POST"])
-def predict():
-    if not predictor:
-        return jsonify({"error": "Predictor disabled"}), 400
+@app.route("/api/emergency/clear", methods=["POST"])
+def clear_emergency():
+    for d in junction_state:
+        junction_state[d]["has_emergency"] = False
+    return jsonify({"message": "All emergencies cleared"})
 
-    data = request.get_json()
-    result = predictor.predict(
-        vehicle_count=data.get("vehicle_count", 0),
-        queue_length=data.get("queue_length", 0),
-        wait_time=data.get("wait_time", 0),
-        hour=datetime.now().hour
-    )
-    return jsonify(result)
-
-# ============================================================
-# SIMULATION CONTROL
-# ============================================================
 
 @app.route("/api/simulate/start", methods=["POST"])
 def start():
     global simulation_running
 
     if not simulation_running:
-        thread = threading.Thread(target=run_simulation, daemon=True)
-        thread.start()
+        threading.Thread(target=run_simulation, daemon=True).start()
         return jsonify({"message": "Simulation started"})
 
     return jsonify({"message": "Already running"})
+
 
 @app.route("/api/simulate/stop", methods=["POST"])
 def stop():
@@ -500,24 +676,13 @@ def stop():
     simulation_running = False
     return jsonify({"message": "Simulation stopped"})
 
-# ============================================================
-# SOCKET EVENTS
-# ============================================================
 
 @socketio.on("connect")
 def connect():
     print("✅ Client connected")
-    emit("connected", {"message": "Junction AI connected"})
+    emit("connected", {"message": "OK"})
 
-@socketio.on("disconnect")
-def disconnect():
-    print("❌ Client disconnected")
-
-# ============================================================
-# MAIN
-# ============================================================
 
 if __name__ == "__main__":
-    print("🚦 Starting Junction AI Server...")
-    port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+    print("🚦 Server running...")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
