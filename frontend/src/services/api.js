@@ -3,7 +3,8 @@
 
 import axios from "axios";
 
-const BASE_URL = "http://localhost:5000";
+// const BASE_URL = "http://localhost:5000";
+const BASE_URL = "https://divyagarud-junction-ai.onrender.com";
 
 // Create axios instance with base URL
 const api = axios.create({

@@ -43,6 +43,55 @@
 //   return { isConnected, junctionData, lastUpdate };
 // }
 
+///////////////////////////////
+
+
+// import { useState, useEffect } from "react";
+// import { io } from "socket.io-client";
+
+// export function useSocket() {
+//   const [isConnected, setIsConnected] = useState(false);
+//   const [junctionData, setJunctionData] = useState(null);
+//   const [lastUpdate, setLastUpdate] = useState(null);
+
+//   useEffect(() => {
+//     const socket = io("http://localhost:5000", {
+//       transports: ["polling"],
+//       reconnection: true,
+//       reconnectionAttempts: 10,
+//       reconnectionDelay: 1000,
+//     });
+
+//     socket.on("connect", () => {
+//       console.log("✅ Connected");
+//       setIsConnected(true);
+//     });
+
+//     socket.on("disconnect", () => {
+//       console.log("❌ Disconnected");
+//       setIsConnected(false);
+//     });
+
+//     socket.on("junction_update", (data) => {
+//       console.log("📡 Data received:", data);
+
+//       setJunctionData(data);
+//       setLastUpdate(new Date().toLocaleTimeString());
+//     });
+
+//     return () => {
+//       socket.disconnect();
+//     };
+//   }, []);
+
+//   return {
+//     isConnected,
+//     junctionData,
+//     lastUpdate,
+//   };
+// }
+
+
 
 import { useState, useEffect } from "react";
 import { io } from "socket.io-client";
@@ -53,7 +102,7 @@ export function useSocket() {
   const [lastUpdate, setLastUpdate] = useState(null);
 
   useEffect(() => {
-    const socket = io("http://localhost:5000", {
+    const socket = io("https://divyagarud-junction-ai.onrender.com", {
       transports: ["polling"],
       reconnection: true,
       reconnectionAttempts: 10,
@@ -72,7 +121,6 @@ export function useSocket() {
 
     socket.on("junction_update", (data) => {
       console.log("📡 Data received:", data);
-
       setJunctionData(data);
       setLastUpdate(new Date().toLocaleTimeString());
     });
