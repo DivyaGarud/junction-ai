@@ -639,6 +639,14 @@ def run_simulation():
 
 # ================= ROUTES =================
 
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "Junction AI running 🚦",
+        "message": "Backend is live"
+    })
+
+
 @app.route("/api/emergency/trigger", methods=["POST", "OPTIONS"])
 def trigger_emergency():
     if request.method == "OPTIONS":
